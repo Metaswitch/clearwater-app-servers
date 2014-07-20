@@ -94,47 +94,57 @@ public:
   /// @param  req          - The request message to clone.
   virtual pjsip_msg* clone_request(pjsip_msg* req) = 0;
 
-  /// Adds the specified target as a new target for the request.  If no request
-  /// is specified, the originally received request is used.  Each target is
-  /// assigned a unique fork identifier, which is passed in with any subsequent
-  /// received responses.
+  /// Indicate that the request should be forwarded following standard routing
+  /// rules.
+  /// 
+  /// This function may be called while processing initial requests,
+  /// in-dialog requests and cancels but not during response handling.
   ///
-  /// This is logically equivalent to changing the ReqURI of the message and
-  /// adding Route: headers for each of the URIs in the `paths` parameter.
-  ///
-  /// This function may also be used to insert an extra Route without changing
-  /// the ReqURI, indicated by not setting the `uri` parameter in the `target`.
-  ///
-  /// @returns             - The identity of this fork.
-  /// @param  request_uri  - The URI for the new target.
-  /// @param  req          - The request message to use for this fork.  If NULL
+  /// @param  req          - The request message to use for forwarding.  If NULL
   ///                        the original request message is used.
-  virtual int add_target(Target& target,
-                         pjsip_msg* req=NULL) = 0;
+  virtual void forward_request(pjsip_msg* req=NULL) = 0;
 
-  /// Add the specified URI as a new target for the request and indicate that
-  /// the target should pass the request back to you if it wishes the request
-  /// to continue.  If no request is specified, the originally received request
-  /// is used.  The supplied token will be provided back on the next call to
-  /// `rx_initial_request()` if the target has done this.
+  /// Create a downstream fork of the incoming request.  The forked request
+  /// will be routed using the standard SIP routing rules.
   ///
-  /// As with `add_target()` each fork is assigned a unique identifier which
-  /// will be passed in with any subsequent received responses.
-  ///
-  /// This is logically equivalent to replacing the unused Route: headers
-  /// with a pair of Route headers, first to the request_uri and the second
-  /// back to the local service (with `token` added as an ODI token).
+  /// This function may be used during initial request processing and while
+  /// handling negative responses to initial request (late forking).
   ///
   /// @return              - The identity of this fork.
-  /// @param  request_uri  - The URI for the new target.
-  /// @param  token        - An opaque token used to corellate returned requests.
   /// @param  req          - The request message to use for this fork.  If NULL
   ///                        the original request message is used.
-  virtual int add_returning_target(pjsip_uri* request_uri,
-                                   const std::string& token,
-                                   pjsip_msg* req=NULL) = 0;
+  virtual int create_fork(pjsip_msg* req=NULL) = 0;
 
-  /// Rejects the original request with the specified status code and text.
+#if 0
+// AMC The following API call is needed to allow AS's that call out to other
+// SIP devices to process a call, or to allow asynchronous handling of
+// requests (e.g. database dips).  Lifetimes of objects are hard to manage -
+// possibly this function should return a special callback object to use?
+
+  /// Defer handling a request until a later time.  The service code should
+  /// keep a reference to the Once the asynchronous
+  /// operation has been completed, the service should hold on to the
+  /// ServiceTxsHelper and call into one of the other transaction actions to
+  /// indicate the desired behaviour.  Services must be prepared for the
+  /// transaction to be cancelled at any time.
+  ///
+  /// This function may be called during any of the entry point functions.
+  ///
+  virtual void defer_request() = 0;
+
+// AMC the following function is needed to build a B2BUA or an AS that creates
+// OOTB calls.  Somehow need to add a way for a service to get hold of a
+// ServiceTxsHelper when not in a transaction.
+
+  /// Create and send a new request.  This function may be called at any time.
+  ///
+  /// The service is automatically added to the newly created dialog.
+  ///
+  /// @param  req         - The request message to use.
+  virtual void create_request(pjsip_msg* req);
+#endif
+
+  /// Reject the original request with the specified status code and text.
   /// This method can only be called when handling the original request.
   /// Any subsequent rejection of the request must be done by sending a final
   /// response using the send_response method.
@@ -183,7 +193,7 @@ public:
 /// 
 /// This is an abstract base class to allow for alternative implementations -
 /// in particular, production and test.  It is implemented by the underlying
-/// service infrastructure, not by the services themseves.
+/// service infrastructure, not by the services themselves.
 ///
 class AppServerTsxHelper
 {
@@ -214,47 +224,42 @@ public:
   /// @param  req          - The request message to clone.
   virtual pjsip_msg* clone_request(pjsip_msg* req) = 0;
 
-  /// Adds the specified target as a new target for the request.  If no request
-  /// is specified, the originally received request is used.  Each target is
-  /// assigned a unique fork identifier, which is passed in with any subsequent
-  /// received responses.
+  /// Indicate that the request should be forwarded following standard routing
+  /// rules.  Note that, unless other Route headers are added by this AS, the
+  /// request will be routed back to the S-CSCF that sent the request in the
+  /// first place.
+  /// 
+  /// This function may be called while processing initial requests,
+  /// in-dialog requests and cancels but not during response handling.
   ///
-  /// This is logically equivalent to changing the ReqURI of the message and
-  /// adding Route: headers for each of the URIs in the `paths` parameter.
-  ///
-  /// This function may also be used to insert an extra Route without changing
-  /// the ReqURI, indicated by not setting the `uri` parameter in the `target`.
-  ///
-  /// @returns             - The identity of this fork.
-  /// @param  request_uri  - The URI for the new target.
-  /// @param  req          - The request message to use for this fork.  If NULL
+  /// @returns             - The ID of this forwarded request
+  /// @param  req          - The request message to use for forwarding.  If NULL
   ///                        the original request message is used.
-  virtual int add_target(Target& target,
-                         pjsip_msg* req=NULL) = 0; // AMC - Here we shim through to `ServiceTsxHelper::add_target()`, building an appropriate target.
+  virtual int forward_request(pjsip_msg* req=NULL) = 0;
 
-  /// Add the specified URI as a new target for the request and indicate that
-  /// the target should pass the request back to you if it wishes the request
-  /// to continue.  If no request is specified, the originally received request
-  /// is used.  The supplied token will be provided back on the next call to
-  /// `rx_initial_request()` if the target has done this.
+  /// Indicate that the response should be forwarded following standard routing
+  /// rules.  Note that, if this service created multiple forks, the responses
+  /// will be aggregated before being send downstream.
+  /// 
+  /// This function may be called while handling any response.
   ///
-  /// As with `add_target()` each fork is assigned a unique identifier which
-  /// will be passed in with any subsequent received responses.
+  /// @param  rsp          - The response message to use for forwarding.  If NULL
+  ///                        the original response message is used.
+  virtual void forward_response(pjsip_msg* rsp=NULL) = 0;
+
+  /// Create a downstream fork of the incoming request.  The forked request
+  /// will be routed using the standard SIP routing rules.
   ///
-  /// This is logically equivalent to replacing the unused Route: headers
-  /// with a pair of Route headers, first to the request_uri and the second
-  /// back to the local service (with `token` added as an ODI token).
+  /// This function may be used during initial request processing and while
+  /// handling negative responses to initial request (late forking).
   ///
   /// @return              - The identity of this fork.
-  /// @param  request_uri  - The URI for the new target.
-  /// @param  token        - An opaque token used to corellate returned requests.
   /// @param  req          - The request message to use for this fork.  If NULL
   ///                        the original request message is used.
-  virtual int add_returning_target(pjsip_uri* request_uri,
-                                   const std::string& token,
-                                   pjsip_msg* req=NULL) = 0;
+  virtual int create_fork(pjsip_msg* req=NULL) = 0;
 
   /// Rejects the original request with the specified status code and text.
+  /// 
   /// This method can only be called when handling the original request.
   /// Any subsequent rejection of the request must be done by sending a final
   /// response using the send_response method.
@@ -315,35 +320,51 @@ public:
   virtual ~ServiceTsx() {}
 
   /// Called for an initial request (dialog-initiating or out-of-dialog) with
-  /// the original received request for the transaction.  Unless the reject
-  /// method is called, on return from this method the request will be
-  /// forwarded to all targets added using the add_target API, or to the
-  /// existing RequestURI if no targets were added.
+  /// the original received request for the transaction.
+  ///
+  /// During this function, exactly one of the following functions must be called, 
+  /// otherwise the request will be rejected with a 503 Server Internal
+  /// Error:
+  ///
+  /// * forward_request()
+  /// * create_fork() - May be called multiple times
+  /// * reject()
+  /// * defer_request()
   ///
   /// @param req           - The received initial request.
-  virtual void on_initial_request(pjsip_msg* req) = 0;
+  virtual void on_initial_request(pjsip_msg* req) { forward_request(); }
 
   /// Called for an in-dialog request with the original received request for
-  /// the transaction.  Unless the reject method is called, on return from
-  /// this method the request will be forwarded within the dialog.
+  /// the transaction.
+  ///
+  /// During this function, exactly one of the following functions must be called, 
+  /// otherwise the request will be rejected with a 503 Server Internal
+  /// Error:
+  ///
+  /// * forward_request()
+  /// * reject()
+  /// * defer_request()
   ///
   /// @param req           - The received in-dialog request.
-  virtual void on_in_dialog_request(pjsip_msg* req) {}
+  virtual void on_in_dialog_request(pjsip_msg* req) { forward_reqeust(); }
 
   /// Called with all responses received on the transaction.  If a transport
   /// error or transaction timeout occurs on a downstream leg, this method is
-  /// called with a 408 response.  The return value indicates whether the 
-  /// response should be forwarded upstream (after suitable consolidation if
-  /// the request was forked).  If the return value is false and new targets
-  /// have been added with the add_target API, the original request is forked
-  /// to them.
+  /// called with a 408 response.
   ///
-  /// @returns             - true if the response should be forwarded upstream
-  ///                        false if the response should be dropped
+  /// During this function, exactly one of the following functions must be called, 
+  /// otherwise the request will be rejected with a 503 Server Internal
+  /// Error:
+  ///
+  /// * forward_response() - Multiple responses will be agregated automatically
+  ///                        across forks.
+  /// * create_fork()
+  /// * defer_response()
+  ///
   /// @param  rsp          - The received request.
   /// @param  fork_id      - The identity of the downstream fork on which
   ///                        the response was received.
-  virtual bool on_response(pjsip_msg* rsp, int fork_id) {return true;}
+  virtual void on_response(pjsip_msg* rsp, int fork_id) { forward_response(); }
 
   /// Called if the original request is cancelled (either by a received
   /// CANCEL request or an error on the inbound transport).  On return from 
@@ -471,35 +492,51 @@ public:
   virtual ~AppServerTsx() {}
 
   /// Called for an initial request (dialog-initiating or out-of-dialog) with
-  /// the original received request for the transaction.  Unless the reject
-  /// method is called, on return from this method the request will be
-  /// forwarded to all targets added using the add_target API, or to the
-  /// existing RequestURI if no targets were added.
+  /// the original received request for the transaction.
+  ///
+  /// During this function, exactly one of the following functions must be called, 
+  /// otherwise the request will be rejected with a 503 Server Internal
+  /// Error:
+  ///
+  /// * forward_request()
+  /// * create_fork() - May be called multiple times
+  /// * reject()
+  /// * defer_request()
   ///
   /// @param req           - The received initial request.
-  virtual void on_initial_request(pjsip_msg* req) = 0;
+  virtual void on_initial_request(pjsip_msg* req) { forward_request(); }
 
   /// Called for an in-dialog request with the original received request for
-  /// the transaction.  Unless the reject method is called, on return from
-  /// this method the request will be forwarded within the dialog.
+  /// the transaction.
+  ///
+  /// During this function, exactly one of the following functions must be called, 
+  /// otherwise the request will be rejected with a 503 Server Internal
+  /// Error:
+  ///
+  /// * forward_request()
+  /// * reject()
+  /// * defer_request()
   ///
   /// @param req           - The received in-dialog request.
-  virtual void on_in_dialog_request(pjsip_msg* req) {}
+  virtual void on_in_dialog_request(pjsip_msg* req) { forward_reqeust(); }
 
   /// Called with all responses received on the transaction.  If a transport
   /// error or transaction timeout occurs on a downstream leg, this method is
-  /// called with a 408 response.  The return value indicates whether the 
-  /// response should be forwarded upstream (after suitable consolidation if
-  /// the request was forked).  If the return value is false and new targets
-  /// have been added with the add_target API, the original request is forked
-  /// to them.
+  /// called with a 408 response.
   ///
-  /// @returns             - true if the response should be forwarded upstream
-  ///                        false if the response should be dropped
+  /// During this function, exactly one of the following functions must be called, 
+  /// otherwise the request will be rejected with a 503 Server Internal
+  /// Error:
+  ///
+  /// * forward_response() - Multiple responses will be agregated automatically
+  ///                        across forks.
+  /// * create_fork()
+  /// * defer_response()
+  ///
   /// @param  rsp          - The received request.
   /// @param  fork_id      - The identity of the downstream fork on which
   ///                        the response was received.
-  virtual bool on_response(pjsip_msg* rsp, int fork_id) {return true;}
+  virtual void on_response(pjsip_msg* rsp, int fork_id) { forward_response(); }
 
   /// Called if the original request is cancelled (either by a received
   /// CANCEL request or an error on the inbound transport).  On return from 
@@ -542,39 +579,7 @@ protected:
   pjsip_msg* clone_request(pjsip_msg* req)
     {return _helper->clone_request(req);}
 
-  /// Adds the specified URI as a new target for the request.  If no request
-  /// is specified, the originally received request is used.  Each target is
-  /// assigned a unique fork identifier, which is passed in with any subsequent
-  /// received responses.
-  ///
-  /// @returns             - The identity of this fork.
-  /// @param  request_uri  - The URI for the new target.
-  /// @param  req          - The request message to use for this fork.  If NULL
-  ///                        the original request message is used.
-  int add_target(pjsip_uri* request_uri,
-                 pjsip_msg* req=NULL)
-    {return }
-
-  /// Rejects the original request with the specified status code and text.
-  /// This method can only be called when handling the original request.
-  /// Any subsequent rejection of the request must be done by sending a final
-  /// response using the send_response method.
-  ///
-  /// @param  status_code  - The SIP status code to send on the response.
-  /// @param  status_text  - The SIP status text to send on the response.  If 
-  ///                        omitted, the default status text for the code is
-  ///                        used (if this is a standard SIP status code).
-  void reject(int status_code,
-              const std::string& status_text="")
-    {return _helper->reject(status_code, status_text);}
-
-  /// Sends a provisional or final response to the transaction.  If a final
-  /// response is sent on an INVITE transaction that was forked, all forks 
-  /// which have not yet responded are cancelled.
-  ///
-  /// @param  rsp          - The response message to send.
-  void send_response(pjsip_msg* rsp)
-    {return _helper->send_response(rsp);}
+// AMC - Wrapper functions around the message control functions.
 
   /// Frees the specified message.  Received responses or messages that have
   /// been cloned with add_target are owned by the AppServerTsx.  It must
