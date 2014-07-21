@@ -51,6 +51,7 @@ extern "C" {
 
 #include "sas.h"
 
+class ServiceTsxHelper;
 class AppServerTsxHelper;
 class AppServer;
 class AppServerTsx;
@@ -70,7 +71,7 @@ class AppServerTsxHelper
 {
 public:
   /// Virtual destructor.
-  virtual ~ServiceTsxHelper() {}
+  virtual ~AppServerTsxHelper() {}
 
   /// Adds the service to the underlying SIP dialog with the specified dialog
   /// identifier.
@@ -139,7 +140,7 @@ public:
   /// API).
   ///
   /// @param  msg          - The message to free.
-  virtual void free_msg(pjsip_msg* msg) = 0;
+  virtual void free_msg(pjsip_msg*& msg) = 0;
 
   /// Returns the pool corresponding to a message.  This pool can then be used
   /// to allocate further headers or bodies to add to the message.
@@ -230,7 +231,7 @@ public:
   /// * defer_request()
   ///
   /// @param req           - The received initial request.
-  virtual void on_initial_request(pjsip_msg* req) { forward_request(); }
+  virtual void on_initial_request(pjsip_msg* req) { forward_request(req); }
 
   /// Called for an in-dialog request with the original received request for
   /// the transaction.
@@ -244,7 +245,7 @@ public:
   /// * defer_request()
   ///
   /// @param req           - The received in-dialog request.
-  virtual void on_in_dialog_request(pjsip_msg* req) { forward_reqeust(); }
+  virtual void on_in_dialog_request(pjsip_msg* req) { forward_request(req); }
 
   /// Called with all responses received on the transaction.  If a transport
   /// error or transaction timeout occurs on a downstream leg, this method is
@@ -262,7 +263,7 @@ public:
   /// @param  rsp          - The received request.
   /// @param  fork_id      - The identity of the downstream fork on which
   ///                        the response was received.
-  virtual void on_response(pjsip_msg* rsp, int fork_id) { forward_response(); }
+  virtual void on_response(pjsip_msg* rsp, int fork_id) { forward_response(rsp); }
 
   /// Called if the original request is cancelled (either by a received
   /// CANCEL request or an error on the inbound transport).  On return from 
@@ -277,7 +278,7 @@ public:
 
 protected:
   /// Constructor.
-  AppServerTsx(AppServerTsxHelpersx* helper) : _helper(helper) {}
+  AppServerTsx(AppServerTsxHelper* helper) : _helper(helper) {}
 
   /// Adds the service to the underlying SIP dialog with the specified dialog
   /// identifier.
@@ -305,8 +306,46 @@ protected:
   pjsip_msg* clone_request(pjsip_msg* req)
     {return _helper->clone_request(req);}
 
-// AMC - Wrapper functions around the message control functions, similar to
-// the surrounding functions.
+
+  /// Indicate that the request should be forwarded following standard routing
+  /// rules.  Note that, even if other Route headers are added by this AS, the
+  /// request will be routed back to the S-CSCF that sent the request in the
+  /// first place after all those routes have been visited.
+  ///
+  /// This function may be called repeatedly to create downstream forks of an
+  /// original upstream request and may also be called during response processing
+  /// or an original request to create a late fork.  When processing an in-dialog
+  /// request this function may only be called once.
+  /// 
+  /// This function may be called while processing initial requests,
+  /// in-dialog requests and cancels but not during response handling.
+  ///
+  /// @returns             - The ID of this forwarded request
+  /// @param  req          - The request message to use for forwarding.
+  int forward_request(pjsip_msg*& req)
+    {return _helper->forward_request(req);}
+
+  /// Indicate that the response should be forwarded following standard routing
+  /// rules.  Note that, if this service created multiple forks, the responses
+  /// will be aggregated before being sent downstream.
+  /// 
+  /// This function may be called while handling any response.
+  ///
+  /// @param  rsp          - The response message to use for forwarding.
+  void forward_response(pjsip_msg*& rsp)
+    {_helper->forward_response(rsp);}
+
+  /// Rejects the request with the specified status code and text.
+  /// 
+  /// This method can only be called when handling any non-cancel request.
+  ///
+  /// @param  status_code  - The SIP status code to send on the response.
+  /// @param  status_text  - The SIP status text to send on the response.  If 
+  ///                        omitted, the default status text for the code is
+  ///                        used (if this is a standard SIP status code).
+  void reject(int status_code,
+              const std::string& status_text="")
+    {return _helper->reject(status_code, status_text);}
 
   /// Frees the specified message.  Received responses or messages that have
   /// been cloned with add_target are owned by the AppServerTsx.  It must
@@ -314,7 +353,7 @@ protected:
   /// API).
   ///
   /// @param  msg          - The message to free.
-  void free_msg(pjsip_msg* msg)
+  void free_msg(pjsip_msg*& msg)
     {return _helper->free_msg(msg);}
 
   /// Returns the pool corresponding to a message.  This pool can then be used
@@ -332,7 +371,7 @@ protected:
 
 private:
   /// Transaction context to use for underlying service-related processing.
-  ServiceTsx* _helper;
+  AppServerTsxHelper* _helper;
 
 };
 

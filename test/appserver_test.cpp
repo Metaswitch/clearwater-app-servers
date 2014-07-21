@@ -48,6 +48,10 @@
 using namespace std;
 using testing::InSequence;
 using testing::Return;
+using testing::Ref;
+using testing::SetArgReferee;
+using testing::Eq;
+using testing::ByRef;
 
 /// Fixture for AppServerTest.
 ///
@@ -59,12 +63,12 @@ public:
   static void SetUpTestCase()
   {
     SipTest::SetUpTestCase();
-    _service_tsx = new MockServiceTsx();
+    _helper = new MockAppServerTsxHelper();
   }
 
   static void TearDownTestCase()
   {
-    delete _service_tsx; _service_tsx = NULL;
+    delete _helper; _helper = NULL;
     SipTest::TearDownTestCase();
   }
 
@@ -76,9 +80,9 @@ public:
   {
   }
 
-  static MockServiceTsx* _service_tsx; 
+  static MockAppServerTsxHelper* _helper; 
 };
-MockServiceTsx* AppServerTest::_service_tsx = NULL;
+MockAppServerTsxHelper* AppServerTest::_helper = NULL;
 
 namespace AS
 {
@@ -196,23 +200,30 @@ MATCHER_P(UriEquals, uri, "")
 }
 
 
+/// Compares a pjsip_msg's request URI with a std::string.
+MATCHER_P(ReqUriEquals, uri, "")
+{
+  std::string arg_uri = PJUtils::uri_to_string(PJSIP_URI_IN_REQ_URI, arg->line.req.uri);
+  return arg_uri == uri; 
+}
+
+
 /// Dummy AppServerTsx that adds itself to the dialog.
 class DummyDialogASTsx : public AppServerTsx
 {
 public:
-  DummyDialogASTsx(ServiceTsx* service_tsx) :
-    AppServerTsx(service_tsx) {}
+  DummyDialogASTsx(AppServerTsxHelper* helper) :
+    AppServerTsx(helper) {}
 
   void on_initial_request(pjsip_msg* req)
   {
     add_to_dialog();
+    forward_request(req);
   }
 
-  bool on_response(pjsip_msg* rsp, int fork_id)
+  void on_response(pjsip_msg* rsp, int fork_id)
   {
-    // This is superfluous - we could just return true.
-    send_response(rsp);
-    return false;
+    forward_response(rsp);
   }
 };
  
@@ -221,8 +232,8 @@ public:
 class DummyRejectASTsx : public AppServerTsx
 {
 public:
-  DummyRejectASTsx(ServiceTsx* service_tsx) :
-    AppServerTsx(service_tsx) {}
+  DummyRejectASTsx(AppServerTsxHelper* helper) :
+    AppServerTsx(helper) {}
 
   void on_initial_request(pjsip_msg* req)
   {
@@ -235,23 +246,19 @@ public:
 class DummyForkASTsx : public AppServerTsx
 {
 public:
-  DummyForkASTsx(ServiceTsx* service_tsx) :
-    AppServerTsx(service_tsx) {}
+  DummyForkASTsx(AppServerTsxHelper* helper) :
+    AppServerTsx(helper) {}
 
   void on_initial_request(pjsip_msg* req)
   {
+    pj_pool_t* pool = get_pool(req);
     pjsip_msg* req1 = clone_request(req);
     pjsip_msg* req2 = clone_request(req);
-    pj_pool_t* pool = get_pool(req);
-    add_target(PJUtils::uri_from_string("sip:alice@example.com", pool), req1);
-    add_target(PJUtils::uri_from_string("sip:bob@example.com", pool), req2);
-  }
-
-  bool on_response(pjsip_msg* rsp, int fork_id)
-  {
-    // Drop all responses - naughty!
-    free_msg(rsp);
-    return false;
+    req1->line.req.uri = PJUtils::uri_from_string("sip:alice@example.com", pool);
+    req2->line.req.uri = PJUtils::uri_from_string("sip:bob@example.com", pool);
+    forward_request(req1);
+    forward_request(req2);
+    free_msg(req);
   }
 };
  
@@ -260,13 +267,15 @@ public:
 TEST_F(AppServerTest, DummyDialogTest)
 {
   Message msg;
-  DummyDialogASTsx as_tsx(_service_tsx);
+  DummyDialogASTsx as_tsx(_helper);
 
-  EXPECT_CALL(*_service_tsx, add_to_dialog(""));
-  as_tsx.on_initial_request(parse_msg(msg.get_request()));
+  pjsip_msg* req = parse_msg(msg.get_request());
+  EXPECT_CALL(*_helper, add_to_dialog(""));
+  EXPECT_CALL(*_helper, forward_request(req));
+  as_tsx.on_initial_request(req);
 
   pjsip_msg* rsp = parse_msg(msg.get_response());
-  EXPECT_CALL(*_service_tsx, send_response(rsp));
+  EXPECT_CALL(*_helper, forward_response(rsp));
   as_tsx.on_response(rsp, 0);
 }
 
@@ -275,9 +284,9 @@ TEST_F(AppServerTest, DummyDialogTest)
 TEST_F(AppServerTest, DummyRejectTest)
 {
   Message msg;
-  DummyRejectASTsx as_tsx(_service_tsx);
+  DummyRejectASTsx as_tsx(_helper);
 
-  EXPECT_CALL(*_service_tsx, reject(404, "Who?"));
+  EXPECT_CALL(*_helper, reject(404, "Who?"));
   as_tsx.on_initial_request(parse_msg(msg.get_request()));
 }
 
@@ -286,29 +295,34 @@ TEST_F(AppServerTest, DummyRejectTest)
 TEST_F(AppServerTest, DummyForkTest)
 {
   Message msg;
-  DummyForkASTsx as_tsx(_service_tsx);
+  DummyForkASTsx as_tsx(_helper);
 
   pjsip_msg* req = parse_msg(msg.get_request());
-  pjsip_msg req1;
-  pjsip_msg req2;
+  pjsip_msg req1_msg;
+  pjsip_msg req2_msg;
+  pjsip_msg* req1 = &req1_msg;
+  pjsip_msg* req2 = &req2_msg;
   {
     // Use a sequence to ensure this happens in order.
     InSequence seq;
-    EXPECT_CALL(*_service_tsx, clone_request(req))
-      .WillOnce(Return(&req1))
-      .WillOnce(Return(&req2));
-    EXPECT_CALL(*_service_tsx, get_pool(req))
+    EXPECT_CALL(*_helper, get_pool(req))
       .WillOnce(Return(stack_data.pool));
-    EXPECT_CALL(*_service_tsx, add_target(UriEquals("sip:alice@example.com"), &req1));
-    EXPECT_CALL(*_service_tsx, add_target(UriEquals("sip:bob@example.com"), &req2));
+    EXPECT_CALL(*_helper, clone_request(req))
+      .WillOnce(Return(req1))
+      .WillOnce(Return(req2));
+    EXPECT_CALL(*_helper, forward_request(req1));
+    EXPECT_CALL(*_helper, forward_request(req2));
+    EXPECT_CALL(*_helper, free_msg(req));
   }
   as_tsx.on_initial_request(req);
+  EXPECT_THAT(req1, ReqUriEquals("sip:alice@example.com"));
+  EXPECT_THAT(req2, ReqUriEquals("sip:bob@example.com"));
 
   pjsip_msg* rsp = parse_msg(msg.get_response());
-  EXPECT_CALL(*_service_tsx, free_msg(rsp));
+  EXPECT_CALL(*_helper, forward_response(rsp));
   as_tsx.on_response(rsp, 0);
 
   rsp = parse_msg(msg.get_response());
-  EXPECT_CALL(*_service_tsx, free_msg(rsp));
+  EXPECT_CALL(*_helper, forward_response(rsp));
   as_tsx.on_response(rsp, 0);
 }
