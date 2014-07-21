@@ -48,10 +48,6 @@
 using namespace std;
 using testing::InSequence;
 using testing::Return;
-using testing::Ref;
-using testing::SetArgReferee;
-using testing::Eq;
-using testing::ByRef;
 
 /// Fixture for AppServerTest.
 ///
