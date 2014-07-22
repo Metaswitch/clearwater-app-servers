@@ -1,8 +1,8 @@
 /**
- * @file appserver.h  Application Server interface definition
+ * @file appserver.h  Abstract SIP Application Server interface definition
  *
  * Project Clearwater - IMS in the Cloud
- * Copyright (C) 2013  Metaswitch Networks Ltd
+ * Copyright (C) 2014  Metaswitch Networks Ltd
  *
  * Parts of this module were derived from GPL licensed PJSIP sample code
  * with the following copyrights.
@@ -51,22 +51,27 @@ extern "C" {
 
 #include "sas.h"
 
-class ServiceTsx;
+class ServiceTsxHelper;
+class AppServerTsxHelper;
 class AppServer;
 class AppServerTsx;
 
 
-/// The ServiceTsx class handles the underlying service-related processing of
-/// a single transaction.  It is an abstract base class to allow for
-/// alternative implementations - in particular, production and test.  It is
-/// implemented by the underlying service infrastructure, not by the
-/// application service itself.
+/// The AppServerTsxHelper class handles the underlying service-related
+/// processing of a single transaction for an AppServer.  Once a service has
+/// been triggered as part of handling a transaction, the related
+/// AppServerTsxHelper is inspected to determine what should be done next, e.g.
+/// forward the request, reject it, fork it etc.
+/// 
+/// This is an abstract base class to allow for alternative implementations -
+/// in particular, production and test.  It is implemented by the underlying
+/// service infrastructure, not by the services themselves.
 ///
-class ServiceTsx
+class AppServerTsxHelper
 {
 public:
   /// Virtual destructor.
-  virtual ~ServiceTsx() {}
+  virtual ~AppServerTsxHelper() {}
 
   /// Adds the service to the underlying SIP dialog with the specified dialog
   /// identifier.
@@ -85,28 +90,42 @@ public:
   virtual const std::string& dialog_id() const = 0;
 
   /// Clones the request.  This is typically used when forking a request if
-  /// different request modifications are required on each fork.
+  /// different request modifications are required on each fork or for storing
+  /// off to handle late forking.
   ///
   /// @returns             - The cloned request message.
   /// @param  req          - The request message to clone.
   virtual pjsip_msg* clone_request(pjsip_msg* req) = 0;
 
-  /// Adds the specified URI as a new target for the request.  If no request
-  /// is specified, the originally received request is used.  Each target is
-  /// assigned a unique fork identifier, which is passed in with any subsequent
-  /// received responses.
+  /// Indicate that the request should be forwarded following standard routing
+  /// rules.  Note that, even if other Route headers are added by this AS, the
+  /// request will be routed back to the S-CSCF that sent the request in the
+  /// first place after all those routes have been visited.
   ///
-  /// @returns             - The identity of this fork.
-  /// @param  request_uri  - The URI for the new target.
-  /// @param  req          - The request message to use for this fork.  If NULL
-  ///                        the original request message is used.
-  virtual int add_target(pjsip_uri* request_uri,
-                         pjsip_msg* req=NULL) = 0;
+  /// This function may be called repeatedly to create downstream forks of an
+  /// original upstream request and may also be called during response processing
+  /// or an original request to create a late fork.  When processing an in-dialog
+  /// request this function may only be called once.
+  /// 
+  /// This function may be called while processing initial requests,
+  /// in-dialog requests and cancels but not during response handling.
+  ///
+  /// @returns             - The ID of this forwarded request
+  /// @param  req          - The request message to use for forwarding.
+  virtual int forward_request(pjsip_msg*& req) = 0;
 
-  /// Rejects the original request with the specified status code and text.
-  /// This method can only be called when handling the original request.
-  /// Any subsequent rejection of the request must be done by sending a final
-  /// response using the send_response method.
+  /// Indicate that the response should be forwarded following standard routing
+  /// rules.  Note that, if this service created multiple forks, the responses
+  /// will be aggregated before being sent downstream.
+  /// 
+  /// This function may be called while handling any response.
+  ///
+  /// @param  rsp          - The response message to use for forwarding.
+  virtual void forward_response(pjsip_msg*& rsp) = 0;
+
+  /// Rejects the request with the specified status code and text.
+  /// 
+  /// This method can only be called when handling any non-cancel request.
   ///
   /// @param  status_code  - The SIP status code to send on the response.
   /// @param  status_text  - The SIP status text to send on the response.  If 
@@ -115,20 +134,13 @@ public:
   virtual void reject(int status_code,
                       const std::string& status_text="") = 0;
 
-  /// Sends a provisional or final response to the transaction.  If a final
-  /// response is sent on an INVITE transaction that was forked, all forks 
-  /// which have not yet responded are cancelled.
-  ///
-  /// @param  rsp          - The response message to send.
-  virtual void send_response(pjsip_msg* rsp) = 0;
-
   /// Frees the specified message.  Received responses or messages that have
   /// been cloned with add_target are owned by the AppServerTsx.  It must
   /// call into ServiceTsx either to send them on or to free them (via this
   /// API).
   ///
   /// @param  msg          - The message to free.
-  virtual void free_msg(pjsip_msg* msg) = 0;
+  virtual void free_msg(pjsip_msg*& msg) = 0;
 
   /// Returns the pool corresponding to a message.  This pool can then be used
   /// to allocate further headers or bodies to add to the message.
@@ -141,6 +153,15 @@ public:
   /// related to this service invocation.
   virtual SAS::TrailId trail() const = 0;
 
+protected:
+  /// Constructor
+  AppServerTsxHelper(ServiceTsxHelper* helper) : _helper(helper) {};
+
+private:
+  /// Transaction helper to delegate to for underlying service-related processing.
+  /// This has a more powerful and flexible API than the one offered by
+  /// AppServerTsxHelper and should not be directly exposed on the public API.
+  ServiceTsxHelper* _helper;
 };
 
 
@@ -166,10 +187,10 @@ public:
   /// does not want to process the request, or create a suitable object
   /// derived from the AppServerTsx class to process the request.
   ///
-  /// @param  service_tsx   - The service context to use to perform
+  /// @param  helper        - The service helper to use to perform
   ///                         the underlying service-related processing.
   /// @param  req           - The received request message.
-  virtual AppServerTsx* get_app_tsx(ServiceTsx* service_tsx,
+  virtual AppServerTsx* get_app_tsx(AppServerTsxHelper* helper,
                                     pjsip_msg* req) = 0;
 
   /// Returns the name of this service.
@@ -189,8 +210,8 @@ private:
 
 /// The AppServerTsx class is an abstract base class used to handle the
 /// application-server-specific processing of a single transaction.  It
-/// encapsulates a ServiceTsx, which it calls through to to perform the
-/// underlying service-related processing.
+/// encapsulates an AppServerTsxHelper, which it calls through to to perform
+/// the underlying service-related processing.
 ///
 class AppServerTsx
 {
@@ -199,35 +220,50 @@ public:
   virtual ~AppServerTsx() {}
 
   /// Called for an initial request (dialog-initiating or out-of-dialog) with
-  /// the original received request for the transaction.  Unless the reject
-  /// method is called, on return from this method the request will be
-  /// forwarded to all targets added using the add_target API, or to the
-  /// existing RequestURI if no targets were added.
+  /// the original received request for the transaction.
+  ///
+  /// During this function, exactly one of the following functions must be called, 
+  /// otherwise the request will be rejected with a 503 Server Internal
+  /// Error:
+  ///
+  /// * forward_request() - May be called multiple times
+  /// * reject()
+  /// * defer_request()
   ///
   /// @param req           - The received initial request.
-  virtual void on_initial_request(pjsip_msg* req) = 0;
+  virtual void on_initial_request(pjsip_msg* req) { forward_request(req); }
 
   /// Called for an in-dialog request with the original received request for
-  /// the transaction.  Unless the reject method is called, on return from
-  /// this method the request will be forwarded within the dialog.
+  /// the transaction.
+  ///
+  /// During this function, exactly one of the following functions must be called, 
+  /// otherwise the request will be rejected with a 503 Server Internal
+  /// Error:
+  ///
+  /// * forward_request()
+  /// * reject()
+  /// * defer_request()
   ///
   /// @param req           - The received in-dialog request.
-  virtual void on_in_dialog_request(pjsip_msg* req) {}
+  virtual void on_in_dialog_request(pjsip_msg* req) { forward_request(req); }
 
   /// Called with all responses received on the transaction.  If a transport
   /// error or transaction timeout occurs on a downstream leg, this method is
-  /// called with a 408 response.  The return value indicates whether the 
-  /// response should be forwarded upstream (after suitable consolidation if
-  /// the request was forked).  If the return value is false and new targets
-  /// have been added with the add_target API, the original request is forked
-  /// to them.
+  /// called with a 408 response.
   ///
-  /// @returns             - true if the response should be forwarded upstream
-  ///                        false if the response should be dropped
+  /// During this function, exactly one of the following functions must be called, 
+  /// otherwise the request will be rejected with a 503 Server Internal
+  /// Error:
+  ///
+  /// * forward_response() - Multiple responses will be aggregated automatically
+  ///                        across forks.
+  /// * create_fork()
+  /// * defer_response()
+  ///
   /// @param  rsp          - The received request.
   /// @param  fork_id      - The identity of the downstream fork on which
   ///                        the response was received.
-  virtual bool on_response(pjsip_msg* rsp, int fork_id) {return true;}
+  virtual void on_response(pjsip_msg* rsp, int fork_id) { forward_response(rsp); }
 
   /// Called if the original request is cancelled (either by a received
   /// CANCEL request or an error on the inbound transport).  On return from 
@@ -242,7 +278,7 @@ public:
 
 protected:
   /// Constructor.
-  AppServerTsx(ServiceTsx* service_tsx) : _service_tsx(service_tsx) {}
+  AppServerTsx(AppServerTsxHelper* helper) : _helper(helper) {}
 
   /// Adds the service to the underlying SIP dialog with the specified dialog
   /// identifier.
@@ -252,7 +288,7 @@ protected:
   ///                        using parameters from the SIP request.
   ///
   void add_to_dialog(const std::string& dialog_id="")
-    {_service_tsx->add_to_dialog(dialog_id);}
+    {_helper->add_to_dialog(dialog_id);}
 
   /// Returns the dialog identifier for this service.
   ///
@@ -260,7 +296,7 @@ protected:
   ///                        either by this ServiceTsx instance
   ///                        or by an earlier transaction in the same dialog.
   const std::string& dialog_id() const
-    {return _service_tsx->dialog_id();}
+    {return _helper->dialog_id();}
 
   /// Clones the request.  This is typically used when forking a request if
   /// different request modifications are required on each fork.
@@ -268,25 +304,40 @@ protected:
   /// @returns             - The cloned request message.
   /// @param  req          - The request message to clone.
   pjsip_msg* clone_request(pjsip_msg* req)
-    {return _service_tsx->clone_request(req);}
+    {return _helper->clone_request(req);}
 
-  /// Adds the specified URI as a new target for the request.  If no request
-  /// is specified, the originally received request is used.  Each target is
-  /// assigned a unique fork identifier, which is passed in with any subsequent
-  /// received responses.
+
+  /// Indicate that the request should be forwarded following standard routing
+  /// rules.  Note that, even if other Route headers are added by this AS, the
+  /// request will be routed back to the S-CSCF that sent the request in the
+  /// first place after all those routes have been visited.
   ///
-  /// @returns             - The identity of this fork.
-  /// @param  request_uri  - The URI for the new target.
-  /// @param  req          - The request message to use for this fork.  If NULL
-  ///                        the original request message is used.
-  int add_target(pjsip_uri* request_uri,
-                 pjsip_msg* req=NULL)
-    {return _service_tsx->add_target(request_uri, req);}
+  /// This function may be called repeatedly to create downstream forks of an
+  /// original upstream request and may also be called during response processing
+  /// or an original request to create a late fork.  When processing an in-dialog
+  /// request this function may only be called once.
+  /// 
+  /// This function may be called while processing initial requests,
+  /// in-dialog requests and cancels but not during response handling.
+  ///
+  /// @returns             - The ID of this forwarded request
+  /// @param  req          - The request message to use for forwarding.
+  int forward_request(pjsip_msg*& req)
+    {return _helper->forward_request(req);}
 
-  /// Rejects the original request with the specified status code and text.
-  /// This method can only be called when handling the original request.
-  /// Any subsequent rejection of the request must be done by sending a final
-  /// response using the send_response method.
+  /// Indicate that the response should be forwarded following standard routing
+  /// rules.  Note that, if this service created multiple forks, the responses
+  /// will be aggregated before being sent downstream.
+  /// 
+  /// This function may be called while handling any response.
+  ///
+  /// @param  rsp          - The response message to use for forwarding.
+  void forward_response(pjsip_msg*& rsp)
+    {_helper->forward_response(rsp);}
+
+  /// Rejects the request with the specified status code and text.
+  /// 
+  /// This method can only be called when handling any non-cancel request.
   ///
   /// @param  status_code  - The SIP status code to send on the response.
   /// @param  status_text  - The SIP status text to send on the response.  If 
@@ -294,15 +345,7 @@ protected:
   ///                        used (if this is a standard SIP status code).
   void reject(int status_code,
               const std::string& status_text="")
-    {return _service_tsx->reject(status_code, status_text);}
-
-  /// Sends a provisional or final response to the transaction.  If a final
-  /// response is sent on an INVITE transaction that was forked, all forks 
-  /// which have not yet responded are cancelled.
-  ///
-  /// @param  rsp          - The response message to send.
-  void send_response(pjsip_msg* rsp)
-    {return _service_tsx->send_response(rsp);}
+    {return _helper->reject(status_code, status_text);}
 
   /// Frees the specified message.  Received responses or messages that have
   /// been cloned with add_target are owned by the AppServerTsx.  It must
@@ -310,8 +353,8 @@ protected:
   /// API).
   ///
   /// @param  msg          - The message to free.
-  void free_msg(pjsip_msg* msg)
-    {return _service_tsx->free_msg(msg);}
+  void free_msg(pjsip_msg*& msg)
+    {return _helper->free_msg(msg);}
 
   /// Returns the pool corresponding to a message.  This pool can then be used
   /// to allocate further headers or bodies to add to the message.
@@ -319,16 +362,16 @@ protected:
   /// @returns             - The pool corresponding to this message.
   /// @param  msg          - The message.
   pj_pool_t* get_pool(const pjsip_msg* msg)
-    {return _service_tsx->get_pool(msg);}
+    {return _helper->get_pool(msg);}
 
   /// Returns the SAS trail identifier that should be used for any SAS events
   /// related to this service invocation.
   SAS::TrailId trail() const
-    {return _service_tsx->trail();}
+    {return _helper->trail();}
 
 private:
   /// Transaction context to use for underlying service-related processing.
-  ServiceTsx* _service_tsx;
+  AppServerTsxHelper* _helper;
 
 };
 
