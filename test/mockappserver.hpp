@@ -50,7 +50,6 @@ class MockAppServerTsxHelper : public AppServerTsxHelper
 public:
   MockAppServerTsxHelper(std::string dialog_id = "",
                          SAS::TrailId trail = 0) :
-                        AppServerTsxHelper(NULL),
                         _dialog_id(dialog_id),
                         _trail(trail) {}
 
