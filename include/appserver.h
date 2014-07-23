@@ -155,13 +155,7 @@ public:
 
 protected:
   /// Constructor
-  AppServerTsxHelper(ServiceTsxHelper* helper) : _helper(helper) {};
-
-private:
-  /// Transaction helper to delegate to for underlying service-related processing.
-  /// This has a more powerful and flexible API than the one offered by
-  /// AppServerTsxHelper and should not be directly exposed on the public API.
-  ServiceTsxHelper* _helper;
+  AppServerTsxHelper() {};
 };
 
 
