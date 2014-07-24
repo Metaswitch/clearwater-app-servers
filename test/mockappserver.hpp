@@ -74,7 +74,7 @@ class MockAppServer : public AppServer
 public:
   MockAppServer(const std::string& service_name = "mock") : AppServer(service_name) {}
 
-  MOCK_METHOD2(get_context, AppServerTsx*(AppServerTsxHelper*, pjsip_msg*));
+  MOCK_METHOD2(get_app_tsx, AppServerTsx*(AppServerTsxHelper*, pjsip_msg*));
 };
 
 
