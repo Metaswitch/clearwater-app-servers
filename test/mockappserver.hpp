@@ -61,9 +61,10 @@ public:
 
   MOCK_METHOD1(add_to_dialog, void(const std::string&));
   MOCK_METHOD1(clone_request, pjsip_msg*(pjsip_msg*));
-  MOCK_METHOD1(forward_request, int(pjsip_msg*&));
-  MOCK_METHOD1(forward_response, void(pjsip_msg*&));
-  MOCK_METHOD2(reject, void(int, const std::string&));
+  MOCK_METHOD3(create_response,
+               pjsip_msg*(pjsip_msg*, pjsip_status_code, const std::string&));
+  MOCK_METHOD1(send_request, int(pjsip_msg*&));
+  MOCK_METHOD1(send_response, void(pjsip_msg*&));
   MOCK_METHOD1(free_msg, void(pjsip_msg*&));
   MOCK_METHOD1(get_pool, pj_pool_t*(const pjsip_msg*));
 };

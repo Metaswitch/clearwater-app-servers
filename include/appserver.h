@@ -97,6 +97,18 @@ public:
   /// @param  req          - The request message to clone.
   virtual pjsip_msg* clone_request(pjsip_msg* req) = 0;
 
+  /// Create a response from a given request, this response can be passed to
+  /// send_response or stored for later.  It may be freed again by passing
+  /// it to free_message.
+  ///
+  /// @returns             - The new response message.
+  /// @param  req          - The request to build a response for.
+  /// @param  status_code  - The SIP status code for the response.
+  /// @param  status_text  - The text part of the status line.
+  virtual pjsip_msg* create_response(pjsip_msg* req,
+                                     pjsip_status_code status_code,
+                                     const std::string& status_text="") = 0;
+
   /// Indicate that the request should be forwarded following standard routing
   /// rules.  Note that, even if other Route headers are added by this AS, the
   /// request will be routed back to the S-CSCF that sent the request in the
@@ -112,7 +124,7 @@ public:
   ///
   /// @returns             - The ID of this forwarded request
   /// @param  req          - The request message to use for forwarding.
-  virtual int forward_request(pjsip_msg*& req) = 0;
+  virtual int send_request(pjsip_msg*& req) = 0;
 
   /// Indicate that the response should be forwarded following standard routing
   /// rules.  Note that, if this service created multiple forks, the responses
@@ -121,18 +133,7 @@ public:
   /// This function may be called while handling any response.
   ///
   /// @param  rsp          - The response message to use for forwarding.
-  virtual void forward_response(pjsip_msg*& rsp) = 0;
-
-  /// Rejects the request with the specified status code and text.
-  /// 
-  /// This method can only be called when handling any non-cancel request.
-  ///
-  /// @param  status_code  - The SIP status code to send on the response.
-  /// @param  status_text  - The SIP status text to send on the response.  If 
-  ///                        omitted, the default status text for the code is
-  ///                        used (if this is a standard SIP status code).
-  virtual void reject(int status_code,
-                      const std::string& status_text="") = 0;
+  virtual void send_response(pjsip_msg*& rsp) = 0;
 
   /// Frees the specified message.  Received responses or messages that have
   /// been cloned with add_target are owned by the AppServerTsx.  It must
@@ -216,16 +217,13 @@ public:
   /// Called for an initial request (dialog-initiating or out-of-dialog) with
   /// the original received request for the transaction.
   ///
-  /// During this function, exactly one of the following functions must be called, 
-  /// otherwise the request will be rejected with a 503 Server Internal
-  /// Error:
-  ///
-  /// * forward_request() - May be called multiple times
-  /// * reject()
-  /// * defer_request()
+  /// During this function, the implementation must either call send_request to
+  /// forward a request upstream, or call send_response to send a final response.
+  /// In either case, the implmentation may call send_response with any number of
+  /// non-final responses to be forwarded upstream.
   ///
   /// @param req           - The received initial request.
-  virtual void on_initial_request(pjsip_msg* req) { forward_request(req); }
+  virtual void on_initial_request(pjsip_msg* req) { send_request(req); }
 
   /// Called for an in-dialog request with the original received request for
   /// the transaction.
@@ -234,12 +232,11 @@ public:
   /// otherwise the request will be rejected with a 503 Server Internal
   /// Error:
   ///
-  /// * forward_request()
-  /// * reject()
-  /// * defer_request()
+  /// * send_request()
+  /// * send_response()
   ///
   /// @param req           - The received in-dialog request.
-  virtual void on_in_dialog_request(pjsip_msg* req) { forward_request(req); }
+  virtual void on_in_dialog_request(pjsip_msg* req) { send_request(req); }
 
   /// Called with all responses received on the transaction.  If a transport
   /// error or transaction timeout occurs on a downstream leg, this method is
@@ -249,15 +246,14 @@ public:
   /// otherwise the request will be rejected with a 503 Server Internal
   /// Error:
   ///
-  /// * forward_response() - Multiple responses will be aggregated automatically
-  ///                        across forks.
-  /// * create_fork()
-  /// * defer_response()
+  /// * send_responce() - Multiple final responses will be aggregated automatically
+  ///                     across forks.
+  /// * send_request()
   ///
   /// @param  rsp          - The received request.
   /// @param  fork_id      - The identity of the downstream fork on which
   ///                        the response was received.
-  virtual void on_response(pjsip_msg* rsp, int fork_id) { forward_response(rsp); }
+  virtual void on_response(pjsip_msg* rsp, int fork_id) { send_response(rsp); }
 
   /// Called if the original request is cancelled (either by a received
   /// CANCEL request or an error on the inbound transport).  On return from 
@@ -300,6 +296,18 @@ protected:
   pjsip_msg* clone_request(pjsip_msg* req)
     {return _helper->clone_request(req);}
 
+  /// Create a response from a given request, this response can be passed to
+  /// send_response or stored for later.  It may be freed again by passing
+  /// it to free_message.
+  ///
+  /// @returns             - The new response message.
+  /// @param  req          - The request to build a response for.
+  /// @param  status_code  - The SIP status code for the response.
+  /// @param  status_text  - The text part of the status line.
+  virtual pjsip_msg* create_response(pjsip_msg* req,
+                                     pjsip_status_code status_code,
+                                     const std::string& status_text="")
+    {return _helper->create_response(req, status_code, status_text);}
 
   /// Indicate that the request should be forwarded following standard routing
   /// rules.  Note that, even if other Route headers are added by this AS, the
@@ -316,8 +324,8 @@ protected:
   ///
   /// @returns             - The ID of this forwarded request
   /// @param  req          - The request message to use for forwarding.
-  int forward_request(pjsip_msg*& req)
-    {return _helper->forward_request(req);}
+  int send_request(pjsip_msg*& req)
+    {return _helper->send_request(req);}
 
   /// Indicate that the response should be forwarded following standard routing
   /// rules.  Note that, if this service created multiple forks, the responses
@@ -326,20 +334,8 @@ protected:
   /// This function may be called while handling any response.
   ///
   /// @param  rsp          - The response message to use for forwarding.
-  void forward_response(pjsip_msg*& rsp)
-    {_helper->forward_response(rsp);}
-
-  /// Rejects the request with the specified status code and text.
-  /// 
-  /// This method can only be called when handling any non-cancel request.
-  ///
-  /// @param  status_code  - The SIP status code to send on the response.
-  /// @param  status_text  - The SIP status text to send on the response.  If 
-  ///                        omitted, the default status text for the code is
-  ///                        used (if this is a standard SIP status code).
-  void reject(int status_code,
-              const std::string& status_text="")
-    {return _helper->reject(status_code, status_text);}
+  void send_response(pjsip_msg*& rsp)
+    {_helper->send_response(rsp);}
 
   /// Frees the specified message.  Received responses or messages that have
   /// been cloned with add_target are owned by the AppServerTsx.  It must
