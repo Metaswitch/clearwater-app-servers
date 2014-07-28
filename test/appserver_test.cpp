@@ -214,12 +214,12 @@ public:
   void on_initial_request(pjsip_msg* req)
   {
     add_to_dialog();
-    forward_request(req);
+    send_request(req);
   }
 
   void on_response(pjsip_msg* rsp, int fork_id)
   {
-    forward_response(rsp);
+    send_response(rsp);
   }
 };
  
@@ -233,7 +233,9 @@ public:
 
   void on_initial_request(pjsip_msg* req)
   {
-    reject(404, "Who?");
+    pjsip_msg* rsp = create_response(req, PJSIP_SC_NOT_FOUND, "Who?");
+    send_response(rsp);
+    free_msg(req);
   }
 };
  
@@ -252,8 +254,8 @@ public:
     pjsip_msg* req2 = clone_request(req);
     req1->line.req.uri = PJUtils::uri_from_string("sip:alice@example.com", pool);
     req2->line.req.uri = PJUtils::uri_from_string("sip:bob@example.com", pool);
-    forward_request(req1);
-    forward_request(req2);
+    send_request(req1);
+    send_request(req2);
     free_msg(req);
   }
 };
@@ -267,11 +269,11 @@ TEST_F(AppServerTest, DummyDialogTest)
 
   pjsip_msg* req = parse_msg(msg.get_request());
   EXPECT_CALL(*_helper, add_to_dialog(""));
-  EXPECT_CALL(*_helper, forward_request(req));
+  EXPECT_CALL(*_helper, send_request(req));
   as_tsx.on_initial_request(req);
 
   pjsip_msg* rsp = parse_msg(msg.get_response());
-  EXPECT_CALL(*_helper, forward_response(rsp));
+  EXPECT_CALL(*_helper, send_response(rsp));
   as_tsx.on_response(rsp, 0);
 }
 
@@ -282,8 +284,18 @@ TEST_F(AppServerTest, DummyRejectTest)
   Message msg;
   DummyRejectASTsx as_tsx(_helper);
 
-  EXPECT_CALL(*_helper, reject(404, "Who?"));
-  as_tsx.on_initial_request(parse_msg(msg.get_request()));
+  pjsip_msg* req = parse_msg(msg.get_request());
+  pjsip_msg rsp1_msg;;
+  pjsip_msg* rsp1 = &rsp1_msg;
+  {
+    // Use a sequence to ensure this happens in order.
+    InSequence seq;
+    EXPECT_CALL(*_helper, create_response(req, PJSIP_SC_NOT_FOUND, "Who?"))
+      .WillOnce(Return(rsp1));
+    EXPECT_CALL(*_helper, send_response(rsp1));
+    EXPECT_CALL(*_helper, free_msg(req));
+  }
+  as_tsx.on_initial_request(req);
 }
 
 
@@ -306,8 +318,8 @@ TEST_F(AppServerTest, DummyForkTest)
     EXPECT_CALL(*_helper, clone_request(req))
       .WillOnce(Return(req1))
       .WillOnce(Return(req2));
-    EXPECT_CALL(*_helper, forward_request(req1));
-    EXPECT_CALL(*_helper, forward_request(req2));
+    EXPECT_CALL(*_helper, send_request(req1));
+    EXPECT_CALL(*_helper, send_request(req2));
     EXPECT_CALL(*_helper, free_msg(req));
   }
   as_tsx.on_initial_request(req);
@@ -315,10 +327,10 @@ TEST_F(AppServerTest, DummyForkTest)
   EXPECT_THAT(req2, ReqUriEquals("sip:bob@example.com"));
 
   pjsip_msg* rsp = parse_msg(msg.get_response());
-  EXPECT_CALL(*_helper, forward_response(rsp));
+  EXPECT_CALL(*_helper, send_response(rsp));
   as_tsx.on_response(rsp, 0);
 
   rsp = parse_msg(msg.get_response());
-  EXPECT_CALL(*_helper, forward_response(rsp));
+  EXPECT_CALL(*_helper, send_response(rsp));
   as_tsx.on_response(rsp, 0);
 }
