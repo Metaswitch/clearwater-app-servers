@@ -240,6 +240,9 @@ private:
 class AppServerTsx
 {
 public:
+  /// Constructor.
+  AppServerTsx(AppServerTsxHelper* helper) : _helper(helper) {}
+
   /// Virtual destructor.
   virtual ~AppServerTsx() {}
 
@@ -305,9 +308,6 @@ public:
   virtual void on_timer_expiry(int id, void* context) {}
 
 protected:
-  /// Constructor.
-  AppServerTsx(AppServerTsxHelper* helper) : _helper(helper) {}
-
   /// Adds the service to the underlying SIP dialog with the specified dialog
   /// identifier.
   ///
