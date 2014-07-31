@@ -246,7 +246,7 @@ public:
   /// otherwise the request will be rejected with a 503 Server Internal
   /// Error:
   ///
-  /// * send_responce() - Multiple final responses will be aggregated automatically
+  /// * send_response() - Multiple final responses will be aggregated automatically
   ///                     across forks.
   /// * send_request()
   ///
