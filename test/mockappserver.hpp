@@ -64,7 +64,7 @@ public:
   MOCK_METHOD3(create_response, pjsip_msg*(pjsip_msg*, pjsip_status_code, const std::string&));
   MOCK_METHOD1(send_request, int(pjsip_msg*&));
   MOCK_METHOD1(send_response, void(pjsip_msg*&));
-  MOCK_METHOD1(cancel_fork, void(int));
+  MOCK_METHOD2(cancel_fork, void(int, int));
   MOCK_METHOD1(free_msg, void(pjsip_msg*&));
   MOCK_METHOD1(get_pool, pj_pool_t*(const pjsip_msg*));
   MOCK_METHOD3(schedule_timer, bool(int, void*, int));

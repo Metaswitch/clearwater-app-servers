@@ -112,7 +112,9 @@ public:
   /// Cancels a forked INVITE request by sending a CANCEL request.
   ///
   /// @param fork_id       - The identifier of the fork to CANCEL.
-  virtual void cancel_fork(int fork_id) = 0;
+  /// @param reason        - SIP status code added in Reason header to the
+  ///                        CANCEL request (0 means no Reason header is added).
+  virtual void cancel_fork(int fork_id, int reason=0) = 0;
 
   /// Indicate that the request should be forwarded following standard routing
   /// rules.  Note that, even if other Route headers are added by this AS, the
@@ -378,8 +380,10 @@ protected:
   /// Cancels a forked INVITE request by sending a CANCEL request.
   ///
   /// @param fork_id       - The identifier of the fork to CANCEL.
-  void cancel_fork(int fork_id)
-    {_helper->cancel_fork(fork_id);}
+  /// @param reason        - SIP status code added in Reason header to the
+  ///                        CANCEL request (0 means no Reason header is added).
+  void cancel_fork(int fork_id, int reason=0)
+    {_helper->cancel_fork(fork_id, reason);}
 
   /// Frees the specified message.  Received responses or messages that have
   /// been cloned with add_target are owned by the AppServerTsx.  It must
