@@ -39,7 +39,6 @@
 #include "gtest/gtest.h"
 
 #include "sip_common.hpp"
-#include "stack.h"
 #include "utils.h"
 #include "pjutils.h"
 #include "analyticslogger.h"
