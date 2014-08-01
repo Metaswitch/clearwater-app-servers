@@ -38,8 +38,7 @@
 #include <string>
 #include "gtest/gtest.h"
 
-#include "siptest.hpp"
-#include "stack.h"
+#include "sip_common.hpp"
 #include "utils.h"
 #include "pjutils.h"
 #include "analyticslogger.h"
@@ -51,24 +50,23 @@ using testing::Return;
 
 /// Fixture for AppServerTest.
 ///
-/// This derives from SipTest to ensure PJSIP is set up correctly, but doesn't
-/// actually use most of its function (and doesn't register a module).
-class AppServerTest : public SipTest
+/// This derives from SipCommonTest to ensure PJSIP is set up correctly.
+class AppServerTest : public SipCommonTest
 {
 public:
   static void SetUpTestCase()
   {
-    SipTest::SetUpTestCase();
+    SipCommonTest::SetUpTestCase();
     _helper = new MockAppServerTsxHelper();
   }
 
   static void TearDownTestCase()
   {
     delete _helper; _helper = NULL;
-    SipTest::TearDownTestCase();
+    SipCommonTest::TearDownTestCase();
   }
 
-  AppServerTest() : SipTest(NULL)
+  AppServerTest() : SipCommonTest()
   {
   }
 
@@ -76,7 +74,7 @@ public:
   {
   }
 
-  static MockAppServerTsxHelper* _helper; 
+  static MockAppServerTsxHelper* _helper;
 };
 MockAppServerTsxHelper* AppServerTest::_helper = NULL;
 
@@ -192,7 +190,7 @@ using AS::Message;
 MATCHER_P(UriEquals, uri, "")
 {
   std::string arg_uri = PJUtils::uri_to_string(PJSIP_URI_IN_REQ_URI, arg);
-  return arg_uri == uri; 
+  return arg_uri == uri;
 }
 
 
@@ -200,7 +198,7 @@ MATCHER_P(UriEquals, uri, "")
 MATCHER_P(ReqUriEquals, uri, "")
 {
   std::string arg_uri = PJUtils::uri_to_string(PJSIP_URI_IN_REQ_URI, arg->line.req.uri);
-  return arg_uri == uri; 
+  return arg_uri == uri;
 }
 
 
@@ -222,7 +220,7 @@ public:
     send_response(rsp);
   }
 };
- 
+
 
 /// Dummy AppServerTsx that rejects the transaction.
 class DummyRejectASTsx : public AppServerTsx
@@ -237,7 +235,7 @@ public:
     send_response(rsp);
   }
 };
- 
+
 
 /// Dummy AppServerTsx that forks the transaction.
 class DummyForkASTsx : public AppServerTsx
@@ -258,7 +256,7 @@ public:
     free_msg(req);
   }
 };
- 
+
 
 /// Test the DummyDialogASTsx by passing a request and a response in.
 TEST_F(AppServerTest, DummyDialogTest)
@@ -307,7 +305,7 @@ TEST_F(AppServerTest, DummyForkTest)
     // Use a sequence to ensure this happens in order.
     InSequence seq;
     EXPECT_CALL(*_helper, get_pool(req))
-      .WillOnce(Return(stack_data.pool));
+      .WillOnce(Return(_pool));
     EXPECT_CALL(*_helper, clone_request(req))
       .WillOnce(Return(req1))
       .WillOnce(Return(req2));
