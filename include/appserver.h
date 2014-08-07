@@ -251,10 +251,10 @@ public:
   /// Called for an initial request (dialog-initiating or out-of-dialog) with
   /// the original received request for the transaction.
   ///
-  /// During this function, exactly one of the following functions must be called, 
-  /// otherwise the request will be rejected with a 503 Server Internal
-  /// Error:
-  ///
+  /// During this function, the implementation must either call send_request to
+  /// forward a request upstream, or call send_response to send a final response.
+  /// In either case, the implmentation may call send_response with any number of
+  /// non-final responses to be forwarded upstream.
   ///
   /// @param req           - The received initial request.
   virtual void on_initial_request(pjsip_msg* req) { send_request(req); }
@@ -266,9 +266,8 @@ public:
   /// otherwise the request will be rejected with a 503 Server Internal
   /// Error:
   ///
-  /// * forward_request()
-  /// * reject()
-  /// * defer_request()
+  /// * send_request()
+  /// * send_response()
   ///
   /// @param req           - The received in-dialog request.
   virtual void on_in_dialog_request(pjsip_msg* req) { send_request(req); }
@@ -281,10 +280,9 @@ public:
   /// otherwise the request will be rejected with a 503 Server Internal
   /// Error:
   ///
-  /// * forward_response() - Multiple responses will be aggregated automatically
-  ///                        across forks.
-  /// * create_fork()
-  /// * defer_response()
+  /// * send_response() - Multiple final responses will be aggregated automatically
+  ///                     across forks.
+  /// * send_request()
   ///
   /// @param  rsp          - The received request.
   /// @param  fork_id      - The identity of the downstream fork on which
