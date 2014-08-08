@@ -280,8 +280,6 @@ TEST_F(AppServerTest, DummyDialogTest)
 TEST_F(AppServerTest, DummyRejectTest)
 {
   Message msg;
-  pjsip_msg* req = parse_msg(msg.get_request());
-  pjsip_msg* rsp = parse_msg(msg.get_response());
   DummyRejectASTsx as_tsx(_helper);
 
   pjsip_msg* req = parse_msg(msg.get_request());
