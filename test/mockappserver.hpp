@@ -67,9 +67,9 @@ public:
   MOCK_METHOD2(cancel_fork, void(int, int));
   MOCK_METHOD1(free_msg, void(pjsip_msg*&));
   MOCK_METHOD1(get_pool, pj_pool_t*(const pjsip_msg*));
-  MOCK_METHOD3(schedule_timer, bool(int, void*, int));
-  MOCK_METHOD1(cancel_timer, void(int));
-  MOCK_METHOD1(timer_running, bool(int));
+  MOCK_METHOD3(schedule_timer, bool(void*, TimerID&, int));
+  MOCK_METHOD1(cancel_timer, void(TimerID));
+  MOCK_METHOD1(timer_running, bool(TimerID));
 };
 
 
