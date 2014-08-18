@@ -59,6 +59,7 @@ public:
   SAS::TrailId trail() const {return _trail;}
   SAS::TrailId _trail;
 
+  MOCK_METHOD0(original_request, pjsip_msg*());
   MOCK_METHOD1(add_to_dialog, void(const std::string&));
   MOCK_METHOD1(clone_request, pjsip_msg*(pjsip_msg*));
   MOCK_METHOD3(create_response, pjsip_msg*(pjsip_msg*, pjsip_status_code, const std::string&));
