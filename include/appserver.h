@@ -57,6 +57,10 @@ class AppServer;
 class AppServerTsx;
 
 
+/// Typedefs for AppServer-specific elements
+typedef intptr_t TimerID;
+
+
 /// The AppServerTsxHelper class handles the underlying service-related
 /// processing of a single transaction for an AppServer.  Once a service has
 /// been triggered as part of handling a transaction, the related
@@ -72,6 +76,23 @@ class AppServerTsxHelper
 public:
   /// Virtual destructor.
   virtual ~AppServerTsxHelper() {}
+
+  /// Returns a mutable clone of the original request.  This can be modified 
+  /// and sent by the application using the send_request call.
+  ///
+  /// @returns             - A clone of the original request message.
+  ///
+  virtual pjsip_msg* original_request() = 0;
+
+  /// Returns the top Route header from the original incoming request.  This
+  /// can be inpsected by the app server, but should not be modified.  Note that
+  /// this Route header is removed from the request passed to the app server on
+  /// the on_*_request calls.
+  ///
+  /// @returns             - A pointer to a read-only copy of the top Route
+  ///                        header from the received request.
+  ///
+  virtual const pjsip_route_hdr* route_hdr() const = 0;
 
   /// Adds the service to the underlying SIP dialog with the specified dialog
   /// identifier.
@@ -108,6 +129,13 @@ public:
   virtual pjsip_msg* create_response(pjsip_msg* req,
                                      pjsip_status_code status_code,
                                      const std::string& status_text="") = 0;
+
+  /// Cancels a forked INVITE request by sending a CANCEL request.
+  ///
+  /// @param fork_id       - The identifier of the fork to CANCEL.
+  /// @param reason        - SIP status code added in Reason header to the
+  ///                        CANCEL request (0 means no Reason header is added).
+  virtual void cancel_fork(int fork_id, int reason=0) = 0;
 
   /// Indicate that the request should be forwarded following standard routing
   /// rules.  Note that, even if other Route headers are added by this AS, the
@@ -149,6 +177,30 @@ public:
   /// @returns             - The pool corresponding to this message.
   /// @param  msg          - The message.
   virtual pj_pool_t* get_pool(const pjsip_msg* msg) = 0;
+
+  /// Schedules a timer with the specified identifier and expiry period.
+  /// The on_timer_expiry callback will be called back with the timer identity
+  /// and context parameter when the timer expires.  If the identifier 
+  /// corresponds to a timer that is already running, the timer will be stopped
+  /// and restarted with the new duration and context parameter.
+  ///
+  /// @returns             - true/false indicating when the timer is programmed.
+  /// @param  context      - Context parameter returned on the callback.
+  /// @param  id           - A unique identifier for the timer.
+  /// @param  duration     - Timer duration in milliseconds.
+  virtual bool schedule_timer(void* context, TimerID& id, int duration) = 0;
+
+  /// Cancels the timer with the specified identifier.  This is a no-op if
+  /// there is no timer with this identifier running.
+  ///
+  /// @param  id           - The unique identifier for the timer.
+  virtual void cancel_timer(TimerID id) = 0;
+
+  /// Queries the state of a timer.
+  ///
+  /// @returns             - true if the timer is running, false otherwise.
+  /// @param  id           - The unique identifier for the timer. 
+  virtual bool timer_running(TimerID id) = 0;
 
   /// Returns the SAS trail identifier that should be used for any SAS events
   /// related to this service invocation.
@@ -211,6 +263,9 @@ private:
 class AppServerTsx
 {
 public:
+  /// Constructor.
+  AppServerTsx(AppServerTsxHelper* helper) : _helper(helper) {}
+
   /// Virtual destructor.
   virtual ~AppServerTsx() {}
 
@@ -266,9 +321,31 @@ public:
   ///                        or transaction timeout)
   virtual void on_cancel(int status_code) {}
 
+  /// Called when a timer programmed by the AppServerTsx expires.
+  ///
+  /// @param  context      - The context parameter specified when the timer
+  ///                        was scheduled.
+  virtual void on_timer_expiry(void* context) {}
+
 protected:
-  /// Constructor.
-  AppServerTsx(AppServerTsxHelper* helper) : _helper(helper) {}
+  /// Returns a mutable clone of the original request.  This can be modified 
+  /// and sent by the application using the send_request call.
+  ///
+  /// @returns             - A clone of the original request message.
+  ///
+  pjsip_msg* original_request()
+    {return _helper->original_request();}
+
+  /// Returns the top Route header from the original incoming request.  This
+  /// can be inpsected by the app server, but should not be modified.  Note that
+  /// this Route header is removed from the request passed to the app server on
+  /// the on_*_request calls.
+  ///
+  /// @returns             - A pointer to a read-only copy of the top Route
+  ///                        header from the received request.
+  ///
+  const pjsip_route_hdr* route_hdr() const
+    {return _helper->route_hdr();}
 
   /// Adds the service to the underlying SIP dialog with the specified dialog
   /// identifier.
@@ -337,6 +414,14 @@ protected:
   void send_response(pjsip_msg*& rsp)
     {_helper->send_response(rsp);}
 
+  /// Cancels a forked INVITE request by sending a CANCEL request.
+  ///
+  /// @param fork_id       - The identifier of the fork to CANCEL.
+  /// @param reason        - SIP status code added in Reason header to the
+  ///                        CANCEL request (0 means no Reason header is added).
+  void cancel_fork(int fork_id, int reason=0)
+    {_helper->cancel_fork(fork_id, reason);}
+
   /// Frees the specified message.  Received responses or messages that have
   /// been cloned with add_target are owned by the AppServerTsx.  It must
   /// call into ServiceTsx either to send them on or to free them (via this
@@ -353,6 +438,33 @@ protected:
   /// @param  msg          - The message.
   pj_pool_t* get_pool(const pjsip_msg* msg)
     {return _helper->get_pool(msg);}
+
+  /// Schedules a timer with the specified identifier and expiry period.
+  /// The on_timer_expiry callback will be called back with the timer identity
+  /// and context parameter when the timer expires.  If the identifier 
+  /// corresponds to a timer that is already running, the timer will be stopped
+  /// and restarted with the new duration and context parameter.
+  ///
+  /// @returns             - true/false indicating when the timer is programmed.
+  /// @param  context      - Context parameter returned on the callback.
+  /// @param  id           - A unique identifier for the timer.
+  /// @param  duration     - Timer duration in milliseconds.
+  bool schedule_timer(void* context, TimerID& id,int duration)
+    {return _helper->schedule_timer(context, id, duration);}
+
+  /// Cancels the timer with the specified identifier.  This is a no-op if
+  /// there is no timer with this identifier running.
+  ///
+  /// @param  id           - The unique identifier for the timer.
+  void cancel_timer(TimerID id)
+    {_helper->cancel_timer(id);}
+
+  /// Queries the state of a timer.
+  ///
+  /// @returns             - true if the timer is running, false otherwise.
+  /// @param  id           - The unique identifier for the timer.
+  bool timer_running(TimerID id)
+    {return _helper->timer_running(id);}
 
   /// Returns the SAS trail identifier that should be used for any SAS events
   /// related to this service invocation.

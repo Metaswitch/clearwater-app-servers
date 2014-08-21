@@ -233,6 +233,7 @@ public:
   {
     pjsip_msg* rsp = create_response(req, PJSIP_SC_NOT_FOUND, "Who?");
     send_response(rsp);
+    free_msg(req);
   }
 };
 
@@ -279,13 +280,19 @@ TEST_F(AppServerTest, DummyDialogTest)
 TEST_F(AppServerTest, DummyRejectTest)
 {
   Message msg;
-  pjsip_msg* req = parse_msg(msg.get_request());
-  pjsip_msg* rsp = parse_msg(msg.get_response());
   DummyRejectASTsx as_tsx(_helper);
 
-  EXPECT_CALL(*_helper, create_response(req, PJSIP_SC_NOT_FOUND, "Who?")).
-    WillOnce(Return(rsp));
-  EXPECT_CALL(*_helper, send_response(rsp));
+  pjsip_msg* req = parse_msg(msg.get_request());
+  pjsip_msg rsp1_msg;;
+  pjsip_msg* rsp1 = &rsp1_msg;
+  {
+    // Use a sequence to ensure this happens in order.
+    InSequence seq;
+    EXPECT_CALL(*_helper, create_response(req, PJSIP_SC_NOT_FOUND, "Who?"))
+      .WillOnce(Return(rsp1));
+    EXPECT_CALL(*_helper, send_response(rsp1));
+    EXPECT_CALL(*_helper, free_msg(req));
+  }
   as_tsx.on_initial_request(req);
 }
 
