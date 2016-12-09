@@ -313,7 +313,7 @@ TEST_F(AppServerTest, DummyForkTest)
     InSequence seq;
     EXPECT_CALL(*_helper, get_pool(req))
       .WillOnce(Return(_pool));
-    EXPECT_CALL(*_helper, clone_request(req))
+    EXPECT_CALL(*_helper, clone_msg(req))
       .WillOnce(Return(req1))
       .WillOnce(Return(req2));
     EXPECT_CALL(*_helper, send_request(req1));
