@@ -62,6 +62,7 @@ public:
   MOCK_METHOD0(original_request, pjsip_msg*());
   MOCK_CONST_METHOD0(route_hdr, const pjsip_route_hdr*());
   MOCK_METHOD1(add_to_dialog, void(const std::string&));
+  MOCK_METHOD1(clone_request, pjsip_msg*(pjsip_msg*));
   MOCK_METHOD1(clone_msg, pjsip_msg*(pjsip_msg*));
   MOCK_METHOD3(create_response, pjsip_msg*(pjsip_msg*, pjsip_status_code, const std::string&));
   MOCK_METHOD1(send_request, int(pjsip_msg*&));
