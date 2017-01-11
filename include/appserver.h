@@ -66,7 +66,7 @@ typedef intptr_t TimerID;
 /// been triggered as part of handling a transaction, the related
 /// AppServerTsxHelper is inspected to determine what should be done next, e.g.
 /// forward the request, reject it, fork it etc.
-/// 
+///
 /// This is an abstract base class to allow for alternative implementations -
 /// in particular, production and test.  It is implemented by the underlying
 /// service infrastructure, not by the services themselves.
@@ -77,7 +77,7 @@ public:
   /// Virtual destructor.
   virtual ~AppServerTsxHelper() {}
 
-  /// Returns a mutable clone of the original request.  This can be modified 
+  /// Returns a mutable clone of the original request.  This can be modified
   /// and sent by the application using the send_request call.
   ///
   /// @returns             - A clone of the original request message.
@@ -118,6 +118,13 @@ public:
   /// @param  req          - The request message to clone.
   virtual pjsip_msg* clone_request(pjsip_msg* req) = 0;
 
+  /// Clones the message.  This is typically used when we want to keep a
+  /// message after calling a mutative method on it.
+  ///
+  /// @returns             - The cloned message.
+  /// @param  msg          - The message to clone.
+  virtual pjsip_msg* clone_msg(pjsip_msg* msg) = 0;
+
   /// Create a response from a given request, this response can be passed to
   /// send_response or stored for later.  It may be freed again by passing
   /// it to free_message.
@@ -146,7 +153,7 @@ public:
   /// original upstream request and may also be called during response processing
   /// or an original request to create a late fork.  When processing an in-dialog
   /// request this function may only be called once.
-  /// 
+  ///
   /// This function may be called while processing initial requests,
   /// in-dialog requests and cancels but not during response handling.
   ///
@@ -157,7 +164,7 @@ public:
   /// Indicate that the response should be forwarded following standard routing
   /// rules.  Note that, if this service created multiple forks, the responses
   /// will be aggregated before being sent downstream.
-  /// 
+  ///
   /// This function may be called while handling any response.
   ///
   /// @param  rsp          - The response message to use for forwarding.
@@ -180,7 +187,7 @@ public:
 
   /// Schedules a timer with the specified identifier and expiry period.
   /// The on_timer_expiry callback will be called back with the timer identity
-  /// and context parameter when the timer expires.  If the identifier 
+  /// and context parameter when the timer expires.  If the identifier
   /// corresponds to a timer that is already running, the timer will be stopped
   /// and restarted with the new duration and context parameter.
   ///
@@ -199,7 +206,7 @@ public:
   /// Queries the state of a timer.
   ///
   /// @returns             - true if the timer is running, false otherwise.
-  /// @param  id           - The unique identifier for the timer. 
+  /// @param  id           - The unique identifier for the timer.
   virtual bool timer_running(TimerID id) = 0;
 
   /// Returns the SAS trail identifier that should be used for any SAS events
@@ -214,7 +221,7 @@ protected:
 
 /// The AppServer class is an abstract base class used to implement services.
 ///
-/// Derived classes are instantiated during system initialization and 
+/// Derived classes are instantiated during system initialization and
 /// register a service name with Sprout.  Sprout calls the get_app_tsx method
 /// on an AppServer derived class when
 ///
@@ -283,7 +290,7 @@ public:
   /// Called for an in-dialog request with the original received request for
   /// the transaction.
   ///
-  /// During this function, exactly one of the following functions must be called, 
+  /// During this function, exactly one of the following functions must be called,
   /// otherwise the request will be rejected with a 503 Server Internal
   /// Error:
   ///
@@ -297,7 +304,7 @@ public:
   /// error or transaction timeout occurs on a downstream leg, this method is
   /// called with a 408 response.
   ///
-  /// During this function, exactly one of the following functions must be called, 
+  /// During this function, exactly one of the following functions must be called,
   /// otherwise the request will be rejected with a 503 Server Internal
   /// Error:
   ///
@@ -311,12 +318,12 @@ public:
   virtual void on_response(pjsip_msg* rsp, int fork_id) { send_response(rsp); }
 
   /// Called if the original request is cancelled (either by a received
-  /// CANCEL request or an error on the inbound transport).  On return from 
+  /// CANCEL request or an error on the inbound transport).  On return from
   /// this method the transaction (and any remaining downstream legs) will be
   /// cancelled automatically.  No further methods will be called for this
   /// transaction.
   ///
-  /// @param  status_code  - Indicates the reason for the cancellation 
+  /// @param  status_code  - Indicates the reason for the cancellation
   ///                        (487 for a CANCEL, 408 for a transport error
   ///                        or transaction timeout)
   virtual void on_cancel(int status_code) {}
@@ -328,7 +335,7 @@ public:
   virtual void on_timer_expiry(void* context) {}
 
 protected:
-  /// Returns a mutable clone of the original request.  This can be modified 
+  /// Returns a mutable clone of the original request.  This can be modified
   /// and sent by the application using the send_request call.
   ///
   /// @returns             - A clone of the original request message.
@@ -368,10 +375,21 @@ protected:
   /// Clones the request.  This is typically used when forking a request if
   /// different request modifications are required on each fork.
   ///
+  /// WARNING: This method is DEPRECATED and only exists for backwards
+  ///          compatibility.
+  ///
   /// @returns             - The cloned request message.
   /// @param  req          - The request message to clone.
   pjsip_msg* clone_request(pjsip_msg* req)
     {return _helper->clone_request(req);}
+
+  /// Clones the message.  This is typically used when we want to keep a
+  /// message after calling a destructive method on it.
+  ///
+  /// @returns             - The cloned message.
+  /// @param  msg          - The message to clone.
+  pjsip_msg* clone_msg(pjsip_msg* msg)
+  {return _helper->clone_msg(msg);}
 
   /// Create a response from a given request, this response can be passed to
   /// send_response or stored for later.  It may be freed again by passing
@@ -395,7 +413,7 @@ protected:
   /// original upstream request and may also be called during response processing
   /// or an original request to create a late fork.  When processing an in-dialog
   /// request this function may only be called once.
-  /// 
+  ///
   /// This function may be called while processing initial requests,
   /// in-dialog requests and cancels but not during response handling.
   ///
@@ -407,7 +425,7 @@ protected:
   /// Indicate that the response should be forwarded following standard routing
   /// rules.  Note that, if this service created multiple forks, the responses
   /// will be aggregated before being sent downstream.
-  /// 
+  ///
   /// This function may be called while handling any response.
   ///
   /// @param  rsp          - The response message to use for forwarding.
@@ -441,7 +459,7 @@ protected:
 
   /// Schedules a timer with the specified identifier and expiry period.
   /// The on_timer_expiry callback will be called back with the timer identity
-  /// and context parameter when the timer expires.  If the identifier 
+  /// and context parameter when the timer expires.  If the identifier
   /// corresponds to a timer that is already running, the timer will be stopped
   /// and restarted with the new duration and context parameter.
   ///
