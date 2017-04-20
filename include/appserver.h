@@ -55,6 +55,7 @@ class ServiceTsxHelper;
 class AppServerTsxHelper;
 class AppServer;
 class AppServerTsx;
+class SproutletProxy;
 
 
 /// Typedefs for AppServer-specific elements
@@ -241,11 +242,17 @@ public:
   /// does not want to process the request, or create a suitable object
   /// derived from the AppServerTsx class to process the request.
   ///
-  /// @param  helper        - The service helper to use to perform
-  ///                         the underlying service-related processing.
+  /// @param  proxy         - The Sproutlet proxy.
   /// @param  req           - The received request message.
-  virtual AppServerTsx* get_app_tsx(AppServerTsxHelper* helper,
-                                    pjsip_msg* req) = 0;
+  /// @param  next_hop      - The Sproutlet can use this field to specify a
+  ///                         next hop URI when it returns a NULL Tsx.
+  /// @param  pool          - The pool for creating the next_hop uri.
+  /// @param  trail         - The SAS trail id for the message.
+  virtual AppServerTsx* get_app_tsx(SproutletProxy* proxy,
+                                    pjsip_msg* req,
+                                    pjsip_sip_uri*& next_hop,
+                                    pj_pool_t* pool,
+                                    SAS::TrailId trail) = 0;
 
   /// Returns the name of this service.
   const std::string service_name() { return _service_name; }
@@ -271,10 +278,15 @@ class AppServerTsx
 {
 public:
   /// Constructor.
-  AppServerTsx(AppServerTsxHelper* helper) : _helper(helper) {}
+  AppServerTsx() : _helper(NULL) {}
 
   /// Virtual destructor.
   virtual ~AppServerTsx() {}
+
+  /// Initializes the AppServerTsx by passing it a helper.
+  ///
+  /// @param  helper       - The app server helper.
+  virtual void init_tsx(AppServerTsxHelper* helper) { _helper = helper; }
 
   /// Called for an initial request (dialog-initiating or out-of-dialog) with
   /// the original received request for the transaction.

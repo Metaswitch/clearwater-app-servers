@@ -206,8 +206,8 @@ MATCHER_P(ReqUriEquals, uri, "")
 class DummyDialogASTsx : public AppServerTsx
 {
 public:
-  DummyDialogASTsx(AppServerTsxHelper* helper) :
-    AppServerTsx(helper) {}
+  DummyDialogASTsx() :
+    AppServerTsx() {}
 
   void on_initial_request(pjsip_msg* req)
   {
@@ -226,8 +226,8 @@ public:
 class DummyRejectASTsx : public AppServerTsx
 {
 public:
-  DummyRejectASTsx(AppServerTsxHelper* helper) :
-    AppServerTsx(helper) {}
+  DummyRejectASTsx() :
+    AppServerTsx() {}
 
   void on_initial_request(pjsip_msg* req)
   {
@@ -242,8 +242,8 @@ public:
 class DummyForkASTsx : public AppServerTsx
 {
 public:
-  DummyForkASTsx(AppServerTsxHelper* helper) :
-    AppServerTsx(helper) {}
+  DummyForkASTsx() :
+    AppServerTsx() {}
 
   void on_initial_request(pjsip_msg* req)
   {
@@ -263,7 +263,8 @@ public:
 TEST_F(AppServerTest, DummyDialogTest)
 {
   Message msg;
-  DummyDialogASTsx as_tsx(_helper);
+  DummyDialogASTsx as_tsx;
+  as_tsx.init_tsx(_helper);
 
   pjsip_msg* req = parse_msg(msg.get_request());
   EXPECT_CALL(*_helper, add_to_dialog(""));
@@ -280,7 +281,8 @@ TEST_F(AppServerTest, DummyDialogTest)
 TEST_F(AppServerTest, DummyRejectTest)
 {
   Message msg;
-  DummyRejectASTsx as_tsx(_helper);
+  DummyRejectASTsx as_tsx;
+  as_tsx.init_tsx(_helper);
 
   pjsip_msg* req = parse_msg(msg.get_request());
   pjsip_msg rsp1_msg;;
@@ -301,7 +303,8 @@ TEST_F(AppServerTest, DummyRejectTest)
 TEST_F(AppServerTest, DummyForkTest)
 {
   Message msg;
-  DummyForkASTsx as_tsx(_helper);
+  DummyForkASTsx as_tsx;
+  as_tsx.init_tsx(_helper);
 
   pjsip_msg* req = parse_msg(msg.get_request());
   pjsip_msg req1_msg;
