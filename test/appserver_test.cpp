@@ -264,7 +264,7 @@ TEST_F(AppServerTest, DummyDialogTest)
 {
   Message msg;
   DummyDialogASTsx as_tsx;
-  as_tsx.init_tsx(_helper);
+  as_tsx.set_helper(_helper);
 
   pjsip_msg* req = parse_msg(msg.get_request());
   EXPECT_CALL(*_helper, add_to_dialog(""));
@@ -282,7 +282,7 @@ TEST_F(AppServerTest, DummyRejectTest)
 {
   Message msg;
   DummyRejectASTsx as_tsx;
-  as_tsx.init_tsx(_helper);
+  as_tsx.set_helper(_helper);
 
   pjsip_msg* req = parse_msg(msg.get_request());
   pjsip_msg rsp1_msg;;
@@ -304,7 +304,7 @@ TEST_F(AppServerTest, DummyForkTest)
 {
   Message msg;
   DummyForkASTsx as_tsx;
-  as_tsx.init_tsx(_helper);
+  as_tsx.set_helper(_helper);
 
   pjsip_msg* req = parse_msg(msg.get_request());
   pjsip_msg req1_msg;

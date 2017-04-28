@@ -55,7 +55,7 @@ class ServiceTsxHelper;
 class AppServerTsxHelper;
 class AppServer;
 class AppServerTsx;
-class SproutletProxy;
+class SproutletHelper;
 
 
 /// Typedefs for AppServer-specific elements
@@ -242,13 +242,13 @@ public:
   /// does not want to process the request, or create a suitable object
   /// derived from the AppServerTsx class to process the request.
   ///
-  /// @param  proxy         - The Sproutlet proxy.
+  /// @param  helper        - The Sproutlet helper.
   /// @param  req           - The received request message.
   /// @param  next_hop      - The Sproutlet can use this field to specify a
   ///                         next hop URI when it returns a NULL Tsx.
   /// @param  pool          - The pool for creating the next_hop uri.
   /// @param  trail         - The SAS trail id for the message.
-  virtual AppServerTsx* get_app_tsx(SproutletProxy* proxy,
+  virtual AppServerTsx* get_app_tsx(SproutletHelper* helper,
                                     pjsip_msg* req,
                                     pjsip_sip_uri*& next_hop,
                                     pj_pool_t* pool,
@@ -283,10 +283,10 @@ public:
   /// Virtual destructor.
   virtual ~AppServerTsx() {}
 
-  /// Initializes the AppServerTsx by passing it a helper.
+  /// Set the AppServerTsxHelper on the AppServerTsx.
   ///
   /// @param  helper       - The app server helper.
-  virtual void init_tsx(AppServerTsxHelper* helper) { _helper = helper; }
+  void set_helper(AppServerTsxHelper* helper) { _helper = helper; }
 
   /// Called for an initial request (dialog-initiating or out-of-dialog) with
   /// the original received request for the transaction.

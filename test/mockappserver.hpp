@@ -81,7 +81,7 @@ class MockAppServer : public AppServer
 public:
   MockAppServer(const std::string& service_name = "mock") : AppServer(service_name) {}
 
-  MOCK_METHOD5(get_app_tsx, AppServerTsx*(SproutletProxy*, pjsip_msg*, pjsip_sip_uri*&, pj_pool_t*, SAS::TrailId));
+  MOCK_METHOD5(get_app_tsx, AppServerTsx*(SproutletHelper*, pjsip_msg*, pjsip_sip_uri*&, pj_pool_t*, SAS::TrailId));
 };
 
 
