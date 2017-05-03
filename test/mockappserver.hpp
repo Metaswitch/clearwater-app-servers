@@ -81,14 +81,14 @@ class MockAppServer : public AppServer
 public:
   MockAppServer(const std::string& service_name = "mock") : AppServer(service_name) {}
 
-  MOCK_METHOD2(get_app_tsx, AppServerTsx*(AppServerTsxHelper*, pjsip_msg*));
+  MOCK_METHOD5(get_app_tsx, AppServerTsx*(SproutletHelper*, pjsip_msg*, pjsip_sip_uri*&, pj_pool_t*, SAS::TrailId));
 };
 
 
 class MockAppServerTsx : public AppServerTsx
 {
 public:
-  MockAppServerTsx(AppServerTsxHelper* helper) : AppServerTsx(helper) {}
+  MockAppServerTsx() : AppServerTsx() {}
 
   MOCK_METHOD1(on_initial_request, void(pjsip_msg*));
   MOCK_METHOD1(on_in_dialog_request, void(pjsip_msg*));
